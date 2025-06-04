@@ -4,14 +4,13 @@
  * Client reads the log from the pipe, sends it to a Raft server.
  * 
  * Client:
- * > date hello > pipe
+ * > date > pipe
  * 
  * Server:
  * > ./rlog
  * [I] Named PIPE was ready.
  * Wed Jun  4 10:45:21 JST 2025
  * [D] 29 bytes read
- * [D] 0 bytes read
  * 
  */
 
@@ -20,7 +19,7 @@
 #include <sys/stat.h>
 #include <sys/fcntl.h>
 #include <sys/socket.h>
-#include <sys/select.h>
+#include <sys/poll.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <errno.h>
@@ -47,7 +46,7 @@ void send_log(const char *data, const char *ip, int port)
 	memset(&server_addr, 0, sizeof(server_addr));
 	server_addr.sin_family = AF_INET;
 	server_addr.sin_port = htons(port);
-	inet_pton(AF_INET, ip, &server_addr.sin_addr);
+	server_addr.sin_addr.s_addr = inet_addr(ip);
 	
 	if ( -1 == sendto(sockfd, data, strlen(data), 0, (struct sockaddr *) &server_addr, sizeof(server_addr)))
 		perror("sendto");
@@ -67,44 +66,36 @@ int main(int argc, char *argv[])
 	}
 	printf("[I] Named PIPE was ready.\n");
 
+	fd = open(pipefile, O_RDONLY | O_NONBLOCK);
+	if (fd == -1) {
+		perror("open");
+		return 1;
+	}
+
+	struct pollfd fds[1];
+	fds[0].fd = fd;
+	fds[0].events = POLLIN;
+
 	while (1) {
-		if (fd == -1) {
-			fd = open(pipefile, O_RDONLY | O_NONBLOCK);
-			if (fd == -1) {
-				perror("open");
-				return 1;
-			}
-		}
-
-		memset(buf, 0, buflen);
-		fd_set read_fds;
-		FD_ZERO(&read_fds);
-		FD_SET(fd, &read_fds);
-
-		int ret = select(fd + 1, &read_fds, NULL, NULL, NULL);
-		if (ret == -1) {
+		if (-1 == poll(fds, 1, -1)){
 			if (errno == EINTR)
 				continue;
-			perror("select");
+			perror("poll");
 			break;
 		}
-		if (FD_ISSET(fd, &read_fds)) {
+		if (fds[0].revents & POLLIN) {
 			ssize_t bytes_read = read(fd, buf, buflen - 1);
 			if (bytes_read == -1) {
 				perror("read");
 				break;
 			}
-			if (bytes_read == 0) {
-				close(fd);
-				fd = -1;
-			}
-			//printf("%s[D] READ bytes=[%ld]\n", buf, bytes_read);
-			//fflush(stdout);
+			buf[bytes_read]='\0';
+			printf("%s", buf);
+			printf("[D] %ld bytes read\n", bytes_read);
+			fflush(stdout);
+
 			char *ip = IP;
 			int port = PORT;
-			//printf("[D] [%ld] [%s]\n", bytes_read, buf);
-			printf("%s[D] %ld bytes read\n", buf, bytes_read);
-
 			send_log(buf, ip, port);
 		}
 	}
