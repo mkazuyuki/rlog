@@ -11,10 +11,10 @@ $(TARGET2): sv.c
 	$(CC) -o $@ $<
 
 clean:
-	rm -f $(TARGET1) $(TARGET2) *~ pipe
+	rm -f $(TARGET1) $(TARGET2) *~ pipe *.log
 
 test: $(TARGET)
-	./test_rlog.sh
+	./test.sh
 	
 
 
