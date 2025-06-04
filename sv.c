@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <arpa/inet.h>
-#include <sys/select.h>
 #include <sys/poll.h>
 #include <unistd.h>
 
