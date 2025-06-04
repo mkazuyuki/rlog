@@ -6,8 +6,7 @@
 #include <unistd.h>
 
 #define PORT 12345
-#define BUFFER_SIZE 1024
-//#define BUFFER_SIZE 0xffff
+#define BUFFER_SIZE 65507
 
 int main()
 {
@@ -55,15 +54,11 @@ int main()
 			if (recv_len == 0) {
 				close(sockfd);
 				sockfd = -1;
-				printf("\n[D] RECV_LEN == [0]\n");
-				fflush(stdout);
 			}
 			if (recv_len == BUFFER_SIZE){
 				buffer[BUFFER_SIZE-1] = '\0';
 			}
-			//printf("%s\n[D] Received from %s:%d len [%ld]\n", buffer, inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port), recv_len);
-			printf("%s", buffer);
-			printf("\n[D] RECV_LEN == [%ld]\n", recv_len);
+			printf("%s[D] %ld Bytes received from %s:%d\n", buffer, recv_len, inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
 			fflush(stdout);
 		}
 	}
