@@ -3,6 +3,7 @@
 #include <string.h>
 #include <arpa/inet.h>
 #include <sys/select.h>
+#include <sys/poll.h>
 #include <unistd.h>
 
 #define PORT 12345
@@ -20,45 +21,36 @@ int main()
 	server_addr.sin_addr.s_addr = INADDR_ANY;
 	server_addr.sin_port = htons(PORT);
 
+	sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+	if (sockfd == -1) {
+		perror("socket");
+		return 1;
+	}
+	if (bind(sockfd, (struct sockaddr *) &server_addr, sizeof(server_addr)) < 0) {
+		perror("bind");
+		close(sockfd);
+		exit(EXIT_FAILURE);
+	}
+	struct pollfd fds[1];
+	fds[0].fd  = sockfd;
+	fds[0].events = POLLIN;
+
 	printf("[D] started waiting for recveve.\n");
 
 	while (1) {
-		if (sockfd == -1) {
-			sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-			if (sockfd == -1) {
-				perror("socket");
-				return 1;
-			}
-			if (bind(sockfd, (struct sockaddr *) &server_addr, sizeof(server_addr)) < 0) {
-				perror("bind");
-				close(sockfd);
-				exit(EXIT_FAILURE);
-			}
-		}
-		memset(buffer, 0, BUFFER_SIZE);
-		fd_set read_fds;
-		FD_ZERO(&read_fds);
-		FD_SET(sockfd, &read_fds);
-		int i = select(sockfd + 1, &read_fds, NULL, NULL, NULL);
-		if (i == -1) {
-			perror("select");
+		if (-1 == poll(fds, 1, -1)){
+			perror("poll");
 			break;
 		}
-		if (FD_ISSET(sockfd, &read_fds)) {
-
+		if (fds[0].revents & POLLIN) {
 			ssize_t recv_len = recvfrom(sockfd, buffer, BUFFER_SIZE, 0, (struct sockaddr *) &client_addr, &addr_len);
 			if (recv_len < 0) {
 				perror("recvfrom");
 				continue;
 			}
-			if (recv_len == 0) {
-				close(sockfd);
-				sockfd = -1;
-			}
-			if (recv_len == BUFFER_SIZE){
-				buffer[BUFFER_SIZE-1] = '\0';
-			}
-			printf("%s[D] %ld Bytes received from %s:%d\n", buffer, recv_len, inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+			buffer[recv_len] = '\0';
+			printf("%s", buffer);
+			printf("[D] %ld Bytes received from %s:%d\n", recv_len, inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
 			fflush(stdout);
 		}
 	}
