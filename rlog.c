@@ -1,17 +1,17 @@
 /*
  * Raft Client
  *
- * Client reads from the pipe, sends to a Raft server.
+ * Client reads the log from the pipe, sends it to a Raft server.
  * 
  * Client:
- * > echo hello > pipe
+ * > date hello > pipe
  * 
  * Server:
  * > ./rlog
- * [i] Named PIPE was ready.
- * [i] READ [6]
- * hello
- * [i] READ [0] [EOF]
+ * [I] Named PIPE was ready.
+ * Wed Jun  4 10:45:21 JST 2025
+ * [D] 29 bytes read
+ * [D] 0 bytes read
  * 
  */
 
@@ -27,7 +27,9 @@
 #include <unistd.h>
 #include <string.h>
 
-#define BUFFER_SIZE 0xFFFF
+// The theoretical maximum size of a UDP datagram payload is 65507 bytes, 
+// which is 65535 bytes - 20 bytes for the IP header - 8 bytes for the UDP header.
+#define BUFFER_SIZE 65507
 #define IP	"127.0.0.1"
 #define PORT	12345
 
@@ -47,10 +49,7 @@ void send_log(const char *data, const char *ip, int port)
 	server_addr.sin_port = htons(port);
 	inet_pton(AF_INET, ip, &server_addr.sin_addr);
 	
-	printf("[D] data len=[%ld]\n", strlen(data));
-
-	int i = sendto(sockfd, data, strlen(data), 0, (struct sockaddr *) &server_addr, sizeof(server_addr));
-	if (i == -1)
+	if ( -1 == sendto(sockfd, data, strlen(data), 0, (struct sockaddr *) &server_addr, sizeof(server_addr)))
 		perror("sendto");
 	close(sockfd);
 }
@@ -66,7 +65,7 @@ int main(int argc, char *argv[])
 		perror("mkfifo");
 		return 1;
 	}
-	printf("[i] Named PIPE was ready.\n");
+	printf("[I] Named PIPE was ready.\n");
 
 	while (1) {
 		if (fd == -1) {
@@ -103,7 +102,8 @@ int main(int argc, char *argv[])
 			//fflush(stdout);
 			char *ip = IP;
 			int port = PORT;
-			printf("[D] [%ld] [%s]\n", bytes_read, buf);
+			//printf("[D] [%ld] [%s]\n", bytes_read, buf);
+			printf("%s[D] %ld bytes read\n", buf, bytes_read);
 
 			send_log(buf, ip, port);
 		}
