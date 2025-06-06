@@ -1,14 +1,14 @@
-TARGET1	= rlog
+TARGET1	= cl
 TARGET2	= sv
 CFLAGS = -Wall -g
 
 all: $(TARGET1) $(TARGET2)
 
-$(TARGET1): rlog.c
-	$(CC) -o $@ $<
+$(TARGET1): cl.c
+	$(CC) $(CFLAGS) -o $@ $<
 
 $(TARGET2): sv.c
-	$(CC) -o $@ $<
+	$(CC) $(CFLAGS) -o $@ $<
 
 clean:
 	rm -f $(TARGET1) $(TARGET2) *~ pipe *.log
