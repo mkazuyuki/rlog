@@ -17,23 +17,21 @@ typedef enum {
 } RaftRole;
 
 // Information of a member
-typedef struct ClusterMember {
+typedef struct _ClusterMember {
 	struct sockaddr_in addr;
-	int is_active;
-	struct ClusterMember* next;
+	struct _ClusterMember* next;
 } ClusterMember;
 
-// Status of a member
+// Status of me member
 typedef struct {
 	RaftRole role;
 	int current_term;
 	int voted_for;
-	ClusterMember* members;
-	int member_count;
 	time_t election_timeout;
 } RaftState;
 
 RaftState raft_state;
+ClusterMember* cluster_members;
 
 // メンバーの追加
 ClusterMember* add_member(struct sockaddr_in addr) {
@@ -42,44 +40,47 @@ ClusterMember* add_member(struct sockaddr_in addr) {
 		perror("malloc");
 		return NULL;
 	}
-	
 	new_member->addr = addr;
-	new_member->is_active = 1;
 	new_member->next = NULL;
-	
-	if (raft_state.members == NULL) {
-		raft_state.members = new_member;
-	} else {
-		ClusterMember* current = raft_state.members;
-		while (current->next != NULL) {
-			current = current->next;
-		}
-		current->next = new_member;
+
+	if (cluster_members == NULL) {
+		cluster_members = new_member;
+		return new_member;
 	}
-	
-	raft_state.member_count++;
+
+	ClusterMember* current = cluster_members;
+	ClusterMember* prev = NULL;
+	for (; current != NULL; prev = current, current = current->next) {
+		if (memcmp(&current->addr, &addr, sizeof(struct sockaddr_in)) == 0) {
+			printf("[E] Member exists already.\n");
+			free(new_member);
+			return NULL;
+		}
+	}
+	// prevはリストの最後を指している
+	prev->next = new_member;
 	return new_member;
 }
 
 // メンバーの削除
-void remove_member(struct sockaddr_in addr) {
-	ClusterMember* current = raft_state.members;
+int remove_member(struct sockaddr_in addr) {
+	ClusterMember* current = cluster_members;
 	ClusterMember* prev = NULL;
 	
 	while (current != NULL) {
 		if (memcmp(&current->addr, &addr, sizeof(struct sockaddr_in)) == 0) {
 			if (prev == NULL) {
-				raft_state.members = current->next;
+				cluster_members = current->next;
 			} else {
 				prev->next = current->next;
 			}
 			free(current);
-			raft_state.member_count--;
-			return;
+			return 0;
 		}
 		prev = current;
 		current = current->next;
 	}
+	return -1;
 }
 
 // メンバーシップ変更
@@ -92,6 +93,7 @@ void handle_membership_change(const char* message) {
 
 	struct sockaddr_in addr;
 	memset(&addr, 0, sizeof(addr));
+	addr.sin_family = AF_INET; // Add this line
 	addr.sin_addr.s_addr = inet_addr(ip);
 	addr.sin_port = htons(atoi(port));
 
@@ -99,22 +101,21 @@ void handle_membership_change(const char* message) {
 		// メンバー追加
 		ClusterMember* new_member = add_member(addr);
 		if (new_member != NULL) {
-			printf("[D] Member joined: %s:%d\n",
-				   inet_ntoa(new_member->addr.sin_addr),
-				   ntohs(new_member->addr.sin_port));
+			printf("[I] Member joined: %s:%d\n", inet_ntoa(new_member->addr.sin_addr), ntohs(new_member->addr.sin_port));
 		}
 	} else if (strncmp(message, "LEAVE", 5) == 0) {
 		// メンバー削除
-		printf("[D] Member left: %s:%d\n",
-			   inet_ntoa(addr.sin_addr),
-			   ntohs(addr.sin_port));
-		remove_member(addr);
+		if(remove_member(addr)){
+			printf("[E] Failed to remove: %s:%d\n", inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
+		} else {
+			printf("[I] Member left: %s:%d\n", inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
+		}
 	} else if (strncmp(message, "DUMP", 4) == 0) {
 		// メンバー一覧の表示
-		ClusterMember* current = raft_state.members;
+		ClusterMember* current = cluster_members;
 		int index = 0;
 		while (current != NULL) {
-			printf("[D] Member [%d][%d]: %s:%d\n", index, current->is_active,
+			printf("[I] Member index[%d] %s:%d\n", index,
 				   inet_ntoa(current->addr.sin_addr),
 				   ntohs(current->addr.sin_port));
 			current = current->next;
@@ -125,14 +126,13 @@ void handle_membership_change(const char* message) {
 
 // メモリの解放
 void cleanup_members() {
-	ClusterMember* current = raft_state.members;
+	ClusterMember* current = cluster_members;
 	while (current != NULL) {
 		ClusterMember* next = current->next;
 		free(current);
 		current = next;
 	}
-	raft_state.members = NULL;
-	raft_state.member_count = 0;
+	cluster_members = NULL;
 }
 
 int main(int argc, char* argv[])
@@ -144,8 +144,7 @@ int main(int argc, char* argv[])
 
 	// 初期化
 	memset(&raft_state, 0, sizeof(raft_state));
-	raft_state.members = NULL;
-	raft_state.member_count = 0;
+	cluster_members = NULL;
 
 	memset(&server_addr, 0, sizeof(server_addr));
 	server_addr.sin_family = AF_INET;
@@ -180,6 +179,7 @@ int main(int argc, char* argv[])
 				perror("recvfrom");
 				continue;
 			}
+			if (recv_len >= BUFFER_SIZE) recv_len = BUFFER_SIZE - 1;
 			buffer[recv_len] = '\0';
 			
 			// メンバーシップの変更処理
